@@ -1,9 +1,11 @@
-import subprocess
 import json
 import re
 import logging
+import anthropic
 
 logger = logging.getLogger(__name__)
+
+_client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY from env
 
 SYSTEM_PROMPT = """You are an expert security analyst AI embedded in a SIEM triage pipeline.
 
@@ -30,7 +32,7 @@ FALLBACK = {
     "severity": "UNKNOWN",
     "summary": "AI triage unavailable — manual review required.",
     "recommended_action": "Review alert manually.",
-    "reasoning": "Claude CLI unavailable or returned an error.",
+    "reasoning": "Claude API unavailable or returned an error.",
 }
 
 
@@ -42,15 +44,10 @@ def _extract_json(text: str) -> dict:
 
 
 def _build_prompt(alert_data: dict, few_shots: list[dict]) -> str:
-    """
-    Build the full prompt for Claude.
-    If few_shots are available, include them so Claude learns from
-    past analyst corrections (feedback loop).
-    """
-    parts = [SYSTEM_PROMPT]
+    parts = []
 
     if few_shots:
-        parts.append("\n\nPast analyst-verified examples (use these to calibrate your verdict):\n")
+        parts.append("Past analyst-verified examples (use these to calibrate your verdict):\n")
         for i, ex in enumerate(few_shots, 1):
             parts.append(
                 f"EXAMPLE {i}:\n"
@@ -61,7 +58,7 @@ def _build_prompt(alert_data: dict, few_shots: list[dict]) -> str:
             )
 
     parts.append(
-        f"\n\nNow triage this new security alert:\n\n"
+        f"Now triage this new security alert:\n\n"
         f"{json.dumps(alert_data, indent=2)}"
     )
     return "\n".join(parts)
@@ -72,16 +69,13 @@ def triage_alert(normalized: dict, source_type: str = "", few_shots: list[dict] 
     prompt = _build_prompt(alert_data, few_shots or [])
 
     try:
-        result = subprocess.run(
-            ["claude", "-p", prompt],
-            capture_output=True,
-            text=True,
-            timeout=60,
-            stdin=subprocess.DEVNULL,
+        message = _client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=1024,
+            system=SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": prompt}],
         )
-        if result.returncode != 0:
-            raise RuntimeError(f"claude CLI exited {result.returncode}: {result.stderr.strip()}")
-        verdict = _extract_json(result.stdout.strip())
+        verdict = _extract_json(message.content[0].text.strip())
         logger.info(
             f"[claude_engine] verdict={verdict.get('verdict')} "
             f"confidence={verdict.get('confidence')} "
