@@ -1,0 +1,48 @@
+version: "3.9"
+
+services:
+  # ── PostgreSQL ────────────────────────────────────────────────────────────────
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER:     alertiq
+      POSTGRES_PASSWORD: alertiq123
+      POSTGRES_DB:       alertiq
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U alertiq"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ── FastAPI backend ───────────────────────────────────────────────────────────
+  backend:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL:          postgresql://alertiq:alertiq123@db:5432/alertiq
+      DEDUP_WINDOW_SECONDS:  300
+      JWT_SECRET:            change-this-in-production
+      JWT_EXPIRE_MINUTES:    480
+      SLACK_WEBHOOK_URL:     ""   # optional
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # ── React dashboard ───────────────────────────────────────────────────────────
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
