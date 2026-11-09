@@ -129,7 +129,7 @@ function ThreatContext({ alert, status }) {
         <div style={{
           background: "var(--surface)",
           border: "1px solid var(--border2)",
-          borderRadius: var_radius,
+          borderRadius: "var(--radius)",
           padding: "10px 16px",
           flex: 1,
           minWidth: 180,
@@ -146,7 +146,7 @@ function ThreatContext({ alert, status }) {
       <div style={{
         background: "var(--surface)",
         border: "1px solid var(--border2)",
-        borderRadius: var_radius,
+        borderRadius: "var(--radius)",
         padding: "10px 16px",
         flex: 1,
         minWidth: 150,
@@ -162,7 +162,7 @@ function ThreatContext({ alert, status }) {
       <div style={{
         background: "var(--surface)",
         border: "1px solid var(--border2)",
-        borderRadius: var_radius,
+        borderRadius: "var(--radius)",
         padding: "10px 16px",
         flex: 1,
         minWidth: 150,
@@ -180,7 +180,7 @@ function ThreatContext({ alert, status }) {
       <div style={{
         background: "var(--surface)",
         border: "1px solid var(--border2)",
-        borderRadius: var_radius,
+        borderRadius: "var(--radius)",
         padding: "10px 16px",
         flex: 1,
         minWidth: 220,
@@ -192,9 +192,6 @@ function ThreatContext({ alert, status }) {
   );
 }
 
-// workaround for template literal in style — CSS var
-const var_radius = "var(--radius)";
-
 // ── Main component ────────────────────────────────────────────────────────────
 export default function AlertDetail() {
   const { id } = useParams();
@@ -205,6 +202,10 @@ export default function AlertDetail() {
   const [notes,      setNotes]      = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [submitMsg,  setSubmitMsg]  = useState("");
+  const canEdit = (() => {
+    try { return JSON.parse(localStorage.getItem("alertiq_user") || "{}").role !== "read_only"; }
+    catch { return true; }
+  })();
 
   useEffect(() => {
     api.alert(id)
@@ -340,6 +341,11 @@ export default function AlertDetail() {
                   >
                     {confidencePct}% confidence
                   </span>
+                  {triage.provider && (
+                    <span className="badge mono" style={{ color: "var(--muted)", background: "var(--surface2)", borderColor: "var(--border)" }}>
+                      via {triage.provider === "rules" ? "built-in rules" : triage.provider === "claude_cli" ? "Claude (CLI)" : triage.provider}
+                    </span>
+                  )}
                   {triage.severity && (
                     <span
                       className="badge mono"
@@ -496,6 +502,7 @@ export default function AlertDetail() {
             <textarea
               value={notes}
               onChange={e => setNotes(e.target.value)}
+              disabled={!canEdit}
               rows={2}
               placeholder="e.g. Confirmed — same actor as incident #1042. Block entire /24 subnet."
               style={{ resize: "vertical", fontFamily: "var(--mono)", fontSize: 12, lineHeight: 1.6 }}
@@ -508,7 +515,7 @@ export default function AlertDetail() {
               <button
                 key={btn.value}
                 className="verdict-btn"
-                disabled={submitting}
+                disabled={submitting || !canEdit}
                 onClick={() => submitVerdict(btn.value)}
                 style={{ color: btn.color, background: btn.bg, borderColor: btn.border }}
               >
@@ -518,6 +525,11 @@ export default function AlertDetail() {
           </div>
 
           {/* Submission result message */}
+          {!canEdit && (
+            <p className="text-muted" style={{ fontSize: 12, marginTop: 10 }}>
+              Read-only account: you can view alerts but not record verdicts.
+            </p>
+          )}
           {submitMsg && (
             <div
               className={`alert-msg ${submitMsg.startsWith("Error") ? "error" : "success"}`}

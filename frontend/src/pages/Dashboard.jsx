@@ -136,13 +136,14 @@ export default function Dashboard() {
   // WebSocket — flash new/updated rows
   useEffect(() => {
     let ws, reconnectTimer;
+    let stopped = false;   // set on cleanup so a closed socket doesn't schedule a new one
 
     function connect() {
       ws = createAlertSocket();
       ws.onopen  = () => setWsStatus("connected");
       ws.onclose = () => {
         setWsStatus("disconnected");
-        reconnectTimer = setTimeout(connect, 5000); // retry after 5 s
+        if (!stopped) reconnectTimer = setTimeout(connect, 5000); // retry after 5 s
       };
       ws.onerror = () => setWsStatus("disconnected");
       ws.onmessage = ({ data }) => {
@@ -156,7 +157,7 @@ export default function Dashboard() {
     }
 
     connect();
-    return () => { clearTimeout(reconnectTimer); ws?.close(); };
+    return () => { stopped = true; clearTimeout(reconnectTimer); ws?.close(); };
   }, [loadAlerts]);
 
   const timeStr = clock.toLocaleTimeString("en-US", { hour12: false });

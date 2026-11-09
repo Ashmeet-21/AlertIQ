@@ -3,31 +3,41 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException
 from psycopg import Connection
 from backend.database import get_db
-from backend.core.auth import hash_password, verify_password, create_token, get_current_user, require_admin
+from backend.config import settings
+from backend.core.auth import ROLES, hash_password, verify_password, create_token, get_current_user, require_admin
 from backend.schemas import UserCreate, LoginRequest, TokenResponse, UserOut
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-@router.post("/register", response_model=UserOut, status_code=201)
-def register(body: UserCreate, conn: Connection = Depends(get_db)):
-    existing = conn.execute("SELECT id FROM users WHERE email = %s", (body.email,)).fetchone()
+def _create_user(conn: Connection, email: str, password: str, role: str) -> UserOut:
+    existing = conn.execute("SELECT id FROM users WHERE email = %s", (email,)).fetchone()
     if existing:
         raise HTTPException(status_code=409, detail="Email already registered")
-
-    # First user bootstraps as admin; all subsequent users become analysts
-    count = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
-    role = "admin" if count == 0 else "analyst"
 
     user_id = str(uuid.uuid4())
     conn.execute(
         "INSERT INTO users (id, email, hashed_password, role) VALUES (%s, %s, %s, %s)",
-        (user_id, body.email, hash_password(body.password), role),
+        (user_id, email, hash_password(password), role),
     )
     conn.commit()
+    return UserOut(id=user_id, email=email, role=role)
+
+
+@router.post("/register", response_model=UserOut, status_code=201)
+def register(body: UserCreate, conn: Connection = Depends(get_db)):
+    # First user bootstraps as admin; all subsequent users become analysts
+    # After that, open sign-up is off unless ALLOW_REGISTRATION=true (admins add users via POST /auth/users),
+    # so a stranger who finds the dashboard can't create an account and read every alert.
+    count = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+    if count > 0 and not settings.allow_registration:
+        raise HTTPException(status_code=403, detail="Registration is closed. Ask an admin to create your account.")
+    role = "admin" if count == 0 else "analyst"
+
+    user = _create_user(conn, body.email, body.password, role)
     logger.info(f"[auth] registered {body.email} as {role}")
-    return UserOut(id=user_id, email=body.email, role=role)
+    return user
 
 
 @router.post("/users", response_model=UserOut, status_code=201)
@@ -37,19 +47,12 @@ def admin_create_user(
     _: dict = Depends(require_admin),
 ):
     """Admin endpoint to create users with explicit roles (analyst / admin / read_only)."""
-    existing = conn.execute("SELECT id FROM users WHERE email = %s", (body.email,)).fetchone()
-    if existing:
-        raise HTTPException(status_code=409, detail="Email already registered")
-
-    user_id = str(uuid.uuid4())
     role = body.role or "analyst"
-    conn.execute(
-        "INSERT INTO users (id, email, hashed_password, role) VALUES (%s, %s, %s, %s)",
-        (user_id, body.email, hash_password(body.password), role),
-    )
-    conn.commit()
+    if role not in ROLES:
+        raise HTTPException(status_code=422, detail=f"role must be one of: {sorted(ROLES)}")
+    user = _create_user(conn, body.email, body.password, role)
     logger.info(f"[auth] admin created {body.email} as {role}")
-    return UserOut(id=user_id, email=body.email, role=role)
+    return user
 
 
 @router.post("/login", response_model=TokenResponse)

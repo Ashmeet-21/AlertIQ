@@ -2,7 +2,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Query
 from psycopg import Connection
 from backend.database import get_db, update_analyst_verdict
-from backend.core.auth import require_analyst
+from backend.core.auth import require_analyst, require_viewer
 from backend.core.ws_manager import ws_manager
 from backend.schemas import AlertOut, AlertStats, VerdictUpdate
 
@@ -39,7 +39,7 @@ def _row_to_alert(r) -> AlertOut:
 @router.get("/stats", response_model=AlertStats)
 def get_stats(
     conn: Connection = Depends(get_db),
-    _: dict = Depends(require_analyst),
+    _: dict = Depends(require_viewer),
 ):
     """Dashboard summary: total count and breakdown by queue/status."""
     row = conn.execute(
@@ -53,7 +53,8 @@ def get_stats(
             COUNT(*) FILTER (WHERE status = 'queued')           AS queued,
             COUNT(*) FILTER (WHERE status = 'triage')           AS triage,
             COUNT(*) FILTER (WHERE status = 'escalated')        AS escalated,
-            COUNT(*) FILTER (WHERE status = 'suppressed')       AS suppressed
+            COUNT(*) FILTER (WHERE status = 'suppressed')       AS suppressed,
+            COUNT(*) FILTER (WHERE status = 'error')            AS error
         FROM alerts
         """
     ).fetchone()
@@ -67,6 +68,7 @@ def get_stats(
         triage=row[6],
         escalated=row[7],
         suppressed=row[8],
+        error=row[9],
     )
 
 
@@ -79,7 +81,7 @@ def list_alerts(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     conn: Connection = Depends(get_db),
-    _: dict = Depends(require_analyst),
+    _: dict = Depends(require_viewer),
 ):
     conditions: list[str] = []
     params: list = []
@@ -108,7 +110,7 @@ def list_alerts(
 def get_alert(
     alert_id: str,
     conn: Connection = Depends(get_db),
-    _: dict = Depends(require_analyst),
+    _: dict = Depends(require_viewer),
 ):
     row = conn.execute(
         f"SELECT {ALERT_COLUMNS} FROM alerts WHERE id = %s",

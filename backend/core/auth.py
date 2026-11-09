@@ -49,6 +49,16 @@ def get_current_user(
     return {"id": row[0], "email": row[1], "role": row[2]}
 
 
+ROLES = {"admin", "analyst", "read_only"}
+
+
+def require_viewer(user: dict = Depends(get_current_user)) -> dict:
+    """Any signed-in role can read alerts; read_only users just can't change them."""
+    if user["role"] not in ROLES:
+        raise HTTPException(status_code=403, detail="Unknown role")
+    return user
+
+
 def require_analyst(user: dict = Depends(get_current_user)) -> dict:
     if user["role"] not in ("analyst", "admin"):
         raise HTTPException(status_code=403, detail="Analyst or admin role required")

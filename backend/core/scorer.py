@@ -4,14 +4,17 @@ ASSET_MOD     = {"critical": 15, "high": 10, "medium": 5, "low": 0, "unknown": 0
 
 
 def compute_score(triage_result: dict, enriched: dict) -> int:
-    severity   = triage_result.get("severity", "UNKNOWN").upper()
+    severity   = str(triage_result.get("severity") or "UNKNOWN").upper()
     verdict    = triage_result.get("verdict", "needs_review")
-    confidence = float(triage_result.get("confidence", 0.5))
+    try:
+        confidence = max(0.0, min(1.0, float(triage_result.get("confidence", 0.5))))
+    except (TypeError, ValueError):
+        confidence = 0.5
 
     base  = SEVERITY_BASE.get(severity, 40)
     v_mod = VERDICT_MOD.get(verdict, 0)
 
-    asset_crit = enriched.get("enrichment.asset.criticality", "unknown").lower()
+    asset_crit = str(enriched.get("enrichment.asset.criticality") or "unknown").lower()
     a_mod = ASSET_MOD.get(asset_crit, 0)
 
     ip_mod = 0
@@ -19,7 +22,10 @@ def compute_score(triage_result: dict, enriched: dict) -> int:
     if enriched.get("enrichment.source_ip.is_hosting"):                    ip_mod += 5
     if not enriched.get("enrichment.source_ip.is_internal", True):        ip_mod += 5
 
-    raw = (base + v_mod + a_mod + ip_mod) * confidence
+    # Confidence scales only the verdict's push up/down. Multiplying the whole score by it
+    # sent every alert to P4 when the AI was down (fallback confidence 0) and buried
+    # uncertain "needs_review" alerts, which are exactly the ones a human should look at.
+    raw = base + v_mod * confidence + a_mod + ip_mod
     return max(0, min(100, round(raw)))
 
 

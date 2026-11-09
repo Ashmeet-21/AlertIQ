@@ -1,10 +1,10 @@
 from datetime import datetime
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class RawEventIn(BaseModel):
-    event_type: str
-    source_type: str
+    event_type: str = Field(min_length=1, max_length=100)    # columns are VARCHAR(100)
+    source_type: str = Field(min_length=1, max_length=100)
     payload: dict
 
 
@@ -36,6 +36,7 @@ class AlertStats(BaseModel):
     triage: int
     escalated: int
     suppressed: int
+    error: int = 0
 
 
 class IngestResponse(BaseModel):
@@ -47,8 +48,8 @@ class IngestResponse(BaseModel):
 # --- Auth & RBAC ---
 
 class UserCreate(BaseModel):
-    email: str
-    password: str
+    email: str = Field(min_length=3, max_length=255)
+    password: str = Field(min_length=8, max_length=128)
     role: str | None = None   # only honoured by admin endpoint
 
 
@@ -72,4 +73,4 @@ class UserOut(BaseModel):
 
 class VerdictUpdate(BaseModel):
     analyst_verdict: str          # "true_positive" | "false_positive" | "needs_review"
-    analyst_notes: str | None = None
+    analyst_notes: str | None = Field(None, max_length=2000)

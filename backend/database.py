@@ -1,4 +1,5 @@
 import psycopg
+from psycopg.types.json import Jsonb
 from backend.config import settings
 
 
@@ -26,7 +27,6 @@ def update_alert_status(conn: psycopg.Connection, alert_id: str, status: str, fi
 
 
 def update_normalized_payload(conn: psycopg.Connection, alert_id: str, payload: dict) -> None:
-    from psycopg.types.json import Jsonb
     conn.execute(
         "UPDATE alerts SET normalized_payload = %s WHERE id = %s",
         (Jsonb(payload), alert_id),
@@ -34,7 +34,6 @@ def update_normalized_payload(conn: psycopg.Connection, alert_id: str, payload: 
 
 
 def update_triage_result(conn: psycopg.Connection, alert_id: str, result: dict) -> None:
-    from psycopg.types.json import Jsonb
     conn.execute(
         "UPDATE alerts SET triage_result = %s WHERE id = %s",
         (Jsonb(result), alert_id),

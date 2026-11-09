@@ -1,5 +1,6 @@
 import ipaddress
 import logging
+from functools import lru_cache
 import httpx
 
 logger = logging.getLogger(__name__)
@@ -26,7 +27,22 @@ def _is_internal(ip_str: str) -> bool:
         return False
 
 
+@lru_cache(maxsize=1024)   # ip-api.com free tier allows 45 requests/min: don't re-ask for the same IP
+def _geo_lookup_cached(ip_str: str) -> tuple:
+    geo = _geo_lookup_uncached(ip_str)
+    if geo == _GEO_FALLBACK:
+        raise LookupError   # don't cache failures
+    return tuple(geo.items())
+
+
 def _geo_lookup(ip_str: str) -> dict:
+    try:
+        return dict(_geo_lookup_cached(ip_str))
+    except LookupError:
+        return dict(_GEO_FALLBACK)
+
+
+def _geo_lookup_uncached(ip_str: str) -> dict:
     try:
         resp = httpx.get(
             f"http://ip-api.com/json/{ip_str}",
@@ -55,16 +71,21 @@ def get_ip_reputation(ip_str: str) -> dict:
     return {"is_internal": False, **geo}
 
 
-def get_asset_info(ip_str: str = "", hostname: str = "") -> dict:
-    return ASSET_REGISTRY.get(ip_str) or ASSET_REGISTRY.get(hostname) or dict(_UNKNOWN_ASSET)
+def get_asset_info(*keys: str) -> dict:
+    for key in keys:
+        if key and key in ASSET_REGISTRY:
+            return ASSET_REGISTRY[key]
+    return dict(_UNKNOWN_ASSET)
 
 
 def enrich(normalized: dict) -> dict:
     source_ip = normalized.get("source.ip", "")
+    dest_ip   = normalized.get("destination.ip", "")
     hostname  = normalized.get("host.name", "")
 
     rep   = get_ip_reputation(source_ip)
-    asset = get_asset_info(ip_str=source_ip, hostname=hostname)
+    # The asset at risk is the target (host / destination), not the attacker's IP
+    asset = get_asset_info(hostname, dest_ip, source_ip)
 
     return {
         "enrichment.source_ip.is_internal": rep["is_internal"],

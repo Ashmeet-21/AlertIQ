@@ -1,12 +1,13 @@
 import uuid
 import logging
-from fastapi import APIRouter, Depends, BackgroundTasks
+from fastapi import APIRouter, Depends, BackgroundTasks, Header, HTTPException
 from psycopg import Connection
 from psycopg.types.json import Jsonb
 from backend.database import get_db
 from backend.schemas import RawEventIn, IngestResponse
 from backend.core.normalizer import normalize, extract_severity
 from backend.core.deduplicator import make_hash, is_duplicate
+from backend.core.scrubber import scrub
 from backend.core.ws_manager import ws_manager
 from backend.config import settings
 
@@ -17,7 +18,6 @@ router = APIRouter(prefix="/alerts", tags=["ingest"])
 def _queue_for_processing(alert_id: str, normalized: dict):
     from backend.core.prefilter import apply_prefilter
     from backend.core.throttle import is_throttled
-    from backend.core.scrubber import scrub
     from backend.core.enricher import enrich
     from backend.core.claude_engine import triage_alert
     from backend.core.scorer import score_alert
@@ -37,9 +37,8 @@ def _queue_for_processing(alert_id: str, normalized: dict):
         with open_db() as conn:
             throttled  = is_throttled(conn, source_ip)
             result     = apply_prefilter(normalized, throttled=throttled)
-            scrubbed   = scrub(normalized)
-            enrichment = enrich(scrubbed)
-            enriched   = {**scrubbed, **enrichment}
+            enrichment = enrich(normalized)   # normalized was already scrubbed at ingest
+            enriched   = {**normalized, **enrichment}
             update_normalized_payload(conn, alert_id, enriched)
 
             triage = None
@@ -76,7 +75,14 @@ def _queue_for_processing(alert_id: str, normalized: dict):
             })
 
     except Exception as exc:
-        logger.error(f"[pipeline] pipeline failed for {alert_id}: {exc}")
+        logger.exception(f"[pipeline] pipeline failed for {alert_id}: {exc}")
+        # Don't leave the alert stuck in 'queued': mark it so an analyst sees it
+        try:
+            with open_db() as conn:
+                update_alert_status(conn, alert_id, "error", f"pipeline error: {type(exc).__name__}")
+            ws_manager.broadcast_from_thread({"type": "alert_updated", "alert_id": alert_id, "status": "error"})
+        except Exception:
+            logger.exception(f"[pipeline] could not mark {alert_id} as error")
 
 
 @router.post("/ingest", response_model=IngestResponse, status_code=202)
@@ -84,8 +90,14 @@ def ingest_alert(
     event: RawEventIn,
     background_tasks: BackgroundTasks,
     conn: Connection = Depends(get_db),
+    x_api_key: str | None = Header(None),
 ):
-    normalized = normalize(event.event_type, event.payload)
+    if settings.ingest_api_key and x_api_key != settings.ingest_api_key:
+        raise HTTPException(status_code=401, detail="Invalid or missing X-API-Key")
+
+    # Scrub PII/credentials before anything is stored, including the raw payload
+    raw_payload = scrub(event.payload)
+    normalized = normalize(event.event_type, raw_payload)
     normalized["source.type"] = event.source_type
     event_hash = make_hash(event.event_type, normalized)
 
@@ -108,10 +120,10 @@ def ingest_alert(
             alert_id,
             event.event_type,
             event.source_type,
-            Jsonb(event.payload),
+            Jsonb(raw_payload),
             Jsonb(normalized),
             event_hash,
-            extract_severity(event.payload),
+            extract_severity(raw_payload),
             "queued",
         ),
     )

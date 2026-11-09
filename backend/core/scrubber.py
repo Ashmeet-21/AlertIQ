@@ -20,11 +20,15 @@ def _scrub_string(value: str) -> str:
     return value
 
 
+def _scrub_value(value):
+    if isinstance(value, str):
+        return _scrub_string(value)
+    if isinstance(value, dict):
+        return {k: _scrub_value(v) for k, v in value.items()}
+    if isinstance(value, list):   # e.g. "recipients": ["a@b.com", ...]
+        return [_scrub_value(v) for v in value]
+    return value
+
+
 def scrub(payload: dict) -> dict:
-    result = deepcopy(payload)
-    for key, value in result.items():
-        if isinstance(value, str):
-            result[key] = _scrub_string(value)
-        elif isinstance(value, dict):
-            result[key] = scrub(value)
-    return result
+    return _scrub_value(deepcopy(payload))

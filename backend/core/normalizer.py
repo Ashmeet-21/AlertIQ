@@ -35,11 +35,14 @@ def normalize(event_type: str, raw: dict) -> dict:
 def extract_severity(raw: dict) -> str | None:
     sev = raw.get("severity") or raw.get("priority") or raw.get("level")
     if sev:
-        return str(sev).upper()
+        return str(sev).upper()[:20]   # column is VARCHAR(20)
     # Infer from attempt count if no explicit severity
-    count = raw.get("attempts") or raw.get("count") or 0
-    if int(count) >= 20:
+    try:
+        count = int(raw.get("attempts") or raw.get("count") or 0)
+    except (TypeError, ValueError):   # e.g. "attempts": "many" must not crash ingest
+        count = 0
+    if count >= 20:
         return "HIGH"
-    if int(count) >= 5:
+    if count >= 5:
         return "MEDIUM"
     return "LOW"

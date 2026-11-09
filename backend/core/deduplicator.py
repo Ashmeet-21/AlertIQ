@@ -1,5 +1,4 @@
 import hashlib
-from datetime import datetime, timedelta, timezone
 from psycopg import Connection
 
 
@@ -15,10 +14,11 @@ def make_hash(event_type: str, normalized: dict) -> str:
 
 
 def is_duplicate(conn: Connection, event_hash: str, window_seconds: int) -> tuple[bool, str | None]:
-    cutoff = datetime.now(timezone.utc) - timedelta(seconds=window_seconds)
+    # Window computed by Postgres: created_at is a naive NOW() timestamp, so comparing it
+    # with a Python UTC datetime breaks whenever the DB timezone isn't UTC.
     row = conn.execute(
-        "SELECT id FROM alerts WHERE event_hash = %s AND created_at >= %s LIMIT 1",
-        (event_hash, cutoff),
+        "SELECT id FROM alerts WHERE event_hash = %s AND created_at >= NOW() - make_interval(secs => %s) LIMIT 1",
+        (event_hash, window_seconds),
     ).fetchone()
     if row:
         return True, str(row[0])

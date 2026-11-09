@@ -46,8 +46,8 @@ def _build_payload(alert_id: str, enriched: dict, triage: dict | None, queue: st
             "title":      f"{emoji} AlertIQ {label}",
             "text":       triage.get("summary", "") if triage else f"Alert requires immediate analyst attention.",
             "fields":     fields,
-            "footer":     "AlertIQ SIEM",
-            "ts":         timestamp,
+            "footer":     f"AlertIQ SIEM · {timestamp}",
+            "ts":         int(datetime.now(timezone.utc).timestamp()),   # Slack wants epoch seconds
         }]
     }
 

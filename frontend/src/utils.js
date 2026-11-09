@@ -73,6 +73,7 @@ export const STATUS_DESCRIPTIONS = {
   suppressed: "Filtered out as known noise — no action needed.",
   queued:     "Waiting for the AI pipeline to process.",
   duplicate:  "Identical event received within the dedup window.",
+  error:      "The pipeline failed on this alert — review it manually.",
 };
 
 // ── Time formatting ───────────────────────────────────────────────────────────

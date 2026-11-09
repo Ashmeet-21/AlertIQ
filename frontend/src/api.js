@@ -22,7 +22,8 @@ async function apiFetch(path, options = {}) {
     },
   });
 
-  if (res.status === 401) {
+  // A 401 from /auth/login is just a wrong password: let the form show the error
+  if (res.status === 401 && !path.startsWith("/auth/login")) {
     localStorage.removeItem("alertiq_token");
     localStorage.removeItem("alertiq_user");
     window.location.href = "/login";
@@ -83,5 +84,6 @@ export const api = {
  */
 export function createAlertSocket() {
   const wsBase = BASE.replace("http://", "ws://").replace("https://", "wss://");
-  return new WebSocket(`${wsBase}/ws/alerts`);
+  const token = localStorage.getItem("alertiq_token");
+  return new WebSocket(`${wsBase}/ws/alerts?token=${encodeURIComponent(token || "")}`);
 }
