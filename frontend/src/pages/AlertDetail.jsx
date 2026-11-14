@@ -1,6 +1,6 @@
 import { Fragment, useState, useEffect } from "react";
 import { Link, useParams } from "react-router-dom";
-import { api } from "../api.js";
+import { api, getUser } from "../api.js";
 import Navbar from "../components/Navbar.jsx";
 import PriorityBadge from "../components/PriorityBadge.jsx";
 import { VerdictBadge } from "../components/VerdictBadge.jsx";
@@ -24,25 +24,26 @@ const DECISIONS = [
   { value: "false_positive", label: "Not a threat",   className: "btn btn-safe" },
 ];
 
-function Facts({ payload }) {
-  const yes = v => (v ? "Yes" : "No");
+// Small formatters; a row whose value ends up empty/false is hidden
+const known = v => v !== "unknown" && v;               // enrichment writes "unknown" when it has no data
+const mono = v => v && <span className="mono">{v}</span>;
+const yesNo = v => v != null && <span className={v ? "flag" : undefined}>{v ? "Yes" : "No"}</span>;
+
+function Facts({ payload: p }) {
+  const internal = p["enrichment.source_ip.is_internal"];
+  const asset = known(p["enrichment.asset.name"]);
   const rows = [
-    ["Source IP",   payload["source.ip"] && <span className="mono">{payload["source.ip"]}</span>],
-    ...(payload["enrichment.source_ip.is_internal"]
-      ? [["Network", "Internal"]]
-      : [["Location", payload["enrichment.source_ip.country"] !== "unknown" && payload["enrichment.source_ip.country"]],
-         ["Network",  payload["enrichment.source_ip.org"] !== "unknown" && payload["enrichment.source_ip.org"]]]),
-    ["Proxy or VPN", payload["enrichment.source_ip.is_proxy"] != null &&
-      <span className={payload["enrichment.source_ip.is_proxy"] ? "flag" : undefined}>{yes(payload["enrichment.source_ip.is_proxy"])}</span>],
-    ["Hosting provider", payload["enrichment.source_ip.is_hosting"] != null &&
-      <span className={payload["enrichment.source_ip.is_hosting"] ? "flag" : undefined}>{yes(payload["enrichment.source_ip.is_hosting"])}</span>],
-    ["Destination", payload["destination.ip"] && <span className="mono">{payload["destination.ip"]}</span>],
-    ["Host",        payload["host.name"]],
-    ["User",        payload["user.name"]],
-    ["Attempts",    payload["event.count"]],
-    ["Target asset", payload["enrichment.asset.name"] !== "unknown" && payload["enrichment.asset.name"] &&
-      `${payload["enrichment.asset.name"]} (${payload["enrichment.asset.criticality"]})`],
-  ].filter(([, v]) => v !== undefined && v !== null && v !== false && v !== "");
+    ["Source IP",        mono(p["source.ip"])],
+    ["Location",         !internal && known(p["enrichment.source_ip.country"])],
+    ["Network",          internal ? "Internal" : known(p["enrichment.source_ip.org"])],
+    ["Proxy or VPN",     yesNo(p["enrichment.source_ip.is_proxy"])],
+    ["Hosting provider", yesNo(p["enrichment.source_ip.is_hosting"])],
+    ["Destination",      mono(p["destination.ip"])],
+    ["Host",             p["host.name"]],
+    ["User",             p["user.name"]],
+    ["Attempts",         p["event.count"]],
+    ["Target asset",     asset && `${asset} (${p["enrichment.asset.criticality"]})`],
+  ].filter(([, v]) => v != null && v !== false && v !== "");
 
   return (
     <dl className="facts">
@@ -58,10 +59,7 @@ export default function AlertDetail() {
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState(null);
-  const canDecide = (() => {
-    try { return JSON.parse(localStorage.getItem("alertiq_user") || "{}").role !== "read_only"; }
-    catch { return true; }
-  })();
+  const canDecide = getUser().role !== "read_only";
 
   useEffect(() => {
     api.alert(id)

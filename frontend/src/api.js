@@ -1,5 +1,16 @@
 const BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
+// The signed-in user saved at login ({ id, email, role }), or {} if none
+export function getUser() {
+  try { return JSON.parse(localStorage.getItem("alertiq_user") || "{}"); }
+  catch { return {}; }
+}
+
+export function clearSession() {
+  localStorage.removeItem("alertiq_token");
+  localStorage.removeItem("alertiq_user");
+}
+
 function authHeaders() {
   const token = localStorage.getItem("alertiq_token");
   return token ? { Authorization: `Bearer ${token}` } : {};
@@ -17,8 +28,7 @@ async function apiFetch(path, options = {}) {
 
   // A 401 from /auth/login is just a wrong password: let the form show the error
   if (res.status === 401 && !path.startsWith("/auth/login")) {
-    localStorage.removeItem("alertiq_token");
-    localStorage.removeItem("alertiq_user");
+    clearSession();
     window.location.href = "/login";
     return;
   }
@@ -66,9 +76,6 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify({ analyst_verdict, analyst_notes }),
     }),
-
-  // Health
-  health: () => apiFetch("/health"),
 };
 
 /**

@@ -1,5 +1,5 @@
 // event_type -> MITRE ATT&CK technique, shown on the alert page
-export const MITRE_MAP = {
+const MITRE_MAP = {
   login_failure:        { technique: "T1110", name: "Brute Force" },
   failed_login:         { technique: "T1110", name: "Brute Force" },
   auth_failure:         { technique: "T1110", name: "Brute Force" },

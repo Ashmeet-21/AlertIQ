@@ -1,18 +1,15 @@
 import { Link, useNavigate } from "react-router-dom";
+import { getUser, clearSession } from "../api.js";
 
 const LIVE_LABELS = { connected: "Live", connecting: "Connecting", disconnected: "Offline" };
 
 // wsStatus is only passed by pages that hold a live connection
 export default function Navbar({ wsStatus }) {
   const navigate = useNavigate();
-  const user = (() => {
-    try { return JSON.parse(localStorage.getItem("alertiq_user") || "{}"); }
-    catch { return {}; }
-  })();
+  const user = getUser();
 
   function signOut() {
-    localStorage.removeItem("alertiq_token");
-    localStorage.removeItem("alertiq_user");
+    clearSession();
     navigate("/login");
   }
 
