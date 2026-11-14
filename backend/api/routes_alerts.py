@@ -3,35 +3,23 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from psycopg import Connection
 from backend.database import get_db, update_analyst_verdict
 from backend.core.auth import require_analyst, require_viewer
+from backend.core.claude_engine import VERDICTS
 from backend.core.ws_manager import ws_manager
 from backend.schemas import AlertOut, AlertStats, VerdictUpdate
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/alerts", tags=["alerts"])
 
-ALERT_COLUMNS = (
-    "id, event_type, source_type, normalized_payload, severity, status, "
-    "filter_reason, triage_result, priority_score, priority_queue, "
-    "analyst_verdict, analyst_notes, created_at"
-)
+ALERT_FIELDS = [
+    "id", "event_type", "source_type", "normalized_payload", "severity", "status",
+    "filter_reason", "triage_result", "priority_score", "priority_queue",
+    "analyst_verdict", "analyst_notes", "created_at",
+]
+ALERT_COLUMNS = ", ".join(ALERT_FIELDS)
 
 
 def _row_to_alert(r) -> AlertOut:
-    return AlertOut(
-        id=r[0],
-        event_type=r[1],
-        source_type=r[2],
-        normalized_payload=r[3],
-        severity=r[4],
-        status=r[5],
-        filter_reason=r[6],
-        triage_result=r[7],
-        priority_score=r[8],
-        priority_queue=r[9],
-        analyst_verdict=r[10],
-        analyst_notes=r[11],
-        created_at=r[12],
-    )
+    return AlertOut(**dict(zip(ALERT_FIELDS, r)))
 
 
 @router.get("/stats", response_model=AlertStats)
@@ -115,9 +103,6 @@ def get_alert(
     return _row_to_alert(row)
 
 
-VALID_VERDICTS = {"true_positive", "false_positive", "needs_review"}
-
-
 @router.patch("/{alert_id}/verdict", response_model=AlertOut)
 def submit_verdict(
     alert_id: str,
@@ -126,10 +111,10 @@ def submit_verdict(
     user: dict = Depends(require_analyst),
 ):
     """Stored on the alert and reused as a few-shot example in later AI prompts."""
-    if body.analyst_verdict not in VALID_VERDICTS:
+    if body.analyst_verdict not in VERDICTS:
         raise HTTPException(
             status_code=422,
-            detail=f"analyst_verdict must be one of: {sorted(VALID_VERDICTS)}",
+            detail=f"analyst_verdict must be one of: {sorted(VERDICTS)}",
         )
 
     row = conn.execute("SELECT id FROM alerts WHERE id = %s", (alert_id,)).fetchone()
