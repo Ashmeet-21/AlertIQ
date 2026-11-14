@@ -3,34 +3,37 @@ import logging
 from fastapi import APIRouter, Depends, BackgroundTasks, Header, HTTPException
 from psycopg import Connection
 from psycopg.types.json import Jsonb
-from backend.database import get_db
+from backend.database import (
+    get_db,
+    open_db,
+    update_alert_status,
+    update_normalized_payload,
+    update_triage_result,
+    update_priority,
+    get_feedback_examples,
+)
 from backend.schemas import RawEventIn, IngestResponse
 from backend.core.normalizer import normalize, extract_severity
 from backend.core.deduplicator import make_hash, is_duplicate
 from backend.core.scrubber import scrub
+from backend.core.prefilter import apply_prefilter
+from backend.core.throttle import is_throttled
+from backend.core.enricher import enrich
+from backend.core.claude_engine import triage_alert
+from backend.core.scorer import score_alert
+from backend.core.notifier import notify
 from backend.core.ws_manager import ws_manager
 from backend.config import settings
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/alerts", tags=["ingest"])
 
+# Pre-filter action -> stored status (past tense, matches the API contract)
+STATUS_MAP = {"triage": "triage", "escalate": "escalated", "suppress": "suppressed"}
 
-def _queue_for_processing(alert_id: str, normalized: dict):
-    from backend.core.prefilter import apply_prefilter
-    from backend.core.throttle import is_throttled
-    from backend.core.enricher import enrich
-    from backend.core.claude_engine import triage_alert
-    from backend.core.scorer import score_alert
-    from backend.core.notifier import notify
-    from backend.database import (
-        open_db,
-        update_alert_status,
-        update_normalized_payload,
-        update_triage_result,
-        update_priority,
-        get_feedback_examples,
-    )
 
+def _run_pipeline(alert_id: str, normalized: dict):
+    """Background task: pre-filter, enrich, AI triage, score, notify, broadcast."""
     source_ip   = normalized.get("source.ip", "")
     source_type = normalized.get("source.type", "")
     try:
@@ -55,8 +58,6 @@ def _queue_for_processing(alert_id: str, normalized: dict):
 
             update_priority(conn, alert_id, score, queue)
 
-            # Normalise status to past-tense strings matching the API contract
-            STATUS_MAP = {"triage": "triage", "escalate": "escalated", "suppress": "suppressed"}
             final_status = STATUS_MAP.get(result.action, result.action)
             update_alert_status(conn, alert_id, final_status, result.reason)
 
@@ -128,7 +129,7 @@ def ingest_alert(
     )
     conn.commit()
 
-    background_tasks.add_task(_queue_for_processing, alert_id, normalized)
+    background_tasks.add_task(_run_pipeline, alert_id, normalized)
 
     return IngestResponse(
         alert_id=alert_id,
