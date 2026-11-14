@@ -65,7 +65,6 @@ def _queue_for_processing(alert_id: str, normalized: dict):
 
             logger.info(f"[pipeline] alert {alert_id} → {result.action} | {queue} score={score}")
 
-            # ── Live update: push to all connected dashboard clients ──────────
             ws_manager.broadcast_from_thread({
                 "type": "alert_updated",
                 "alert_id": alert_id,

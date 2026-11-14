@@ -1,12 +1,4 @@
-"""
-WebSocket connection manager.
-
-- Dashboard clients connect to /ws/alerts.
-- When a background pipeline thread finishes processing an alert, it calls
-  broadcast_from_thread(), which safely schedules a coroutine on the main
-  event loop via asyncio.run_coroutine_threadsafe().
-- The dashboard receives a small JSON event and refreshes its alert list.
-"""
+"""Tracks open dashboard sockets. Pipeline threads broadcast via broadcast_from_thread()."""
 import asyncio
 import logging
 from fastapi import WebSocket
@@ -45,10 +37,7 @@ class ConnectionManager:
             self.disconnect(ws)
 
     def broadcast_from_thread(self, data: dict) -> None:
-        """
-        Thread-safe broadcast.
-        Safe to call from FastAPI BackgroundTasks (which run in a thread pool).
-        """
+        """Safe to call from BackgroundTasks, which run in a thread pool."""
         if self._loop is not None and self._loop.is_running():
             asyncio.run_coroutine_threadsafe(self.broadcast(data), self._loop)
 

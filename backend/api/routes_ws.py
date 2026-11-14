@@ -1,18 +1,6 @@
 """
-WebSocket endpoint — GET /ws/alerts
-
-Dashboard clients connect here to receive real-time alert update events.
-Token is passed as a query parameter because the WebSocket spec doesn't
-support custom headers from the browser.
-
-Each message sent to connected clients looks like:
-{
-  "type": "alert_updated",
-  "alert_id": "...",
-  "status": "triage" | "escalated" | "suppressed",
-  "queue": "P1" | "P2" | "P3" | "P4",
-  "score": 85
-}
+GET /ws/alerts?token=<jwt>: pushes {"type", "alert_id", ...} whenever an alert changes.
+The token goes in the query string because browsers can't set headers on WebSockets.
 """
 import logging
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect

@@ -34,8 +34,6 @@ def _row_to_alert(r) -> AlertOut:
     )
 
 
-# ── GET /alerts/stats ──────────────────────────────────────────────────────────
-
 @router.get("/stats", response_model=AlertStats)
 def get_stats(
     conn: Connection = Depends(get_db),
@@ -72,8 +70,6 @@ def get_stats(
     )
 
 
-# ── GET /alerts ────────────────────────────────────────────────────────────────
-
 @router.get("", response_model=list[AlertOut])
 def list_alerts(
     status: str | None = Query(None, description="Filter by status"),
@@ -104,8 +100,6 @@ def list_alerts(
     return [_row_to_alert(r) for r in rows]
 
 
-# ── GET /alerts/{alert_id} ─────────────────────────────────────────────────────
-
 @router.get("/{alert_id}", response_model=AlertOut)
 def get_alert(
     alert_id: str,
@@ -121,8 +115,6 @@ def get_alert(
     return _row_to_alert(row)
 
 
-# ── PATCH /alerts/{alert_id}/verdict ──────────────────────────────────────────
-
 VALID_VERDICTS = {"true_positive", "false_positive", "needs_review"}
 
 
@@ -133,12 +125,7 @@ def submit_verdict(
     conn: Connection = Depends(get_db),
     user: dict = Depends(require_analyst),
 ):
-    """
-    Analyst submits a TP / FP / NR verdict.
-    - Stored on the alert row for the feedback loop (few-shot prompting).
-    - Broadcasts an alert_updated event via WebSocket so the dashboard
-      reflects the change instantly without a page refresh.
-    """
+    """Stored on the alert and reused as a few-shot example in later AI prompts."""
     if body.analyst_verdict not in VALID_VERDICTS:
         raise HTTPException(
             status_code=422,
@@ -155,14 +142,12 @@ def submit_verdict(
         f"verdict={body.analyst_verdict}"
     )
 
-    # Broadcast so the dashboard updates without a refresh
     ws_manager.broadcast_from_thread({
         "type": "verdict_submitted",
         "alert_id": alert_id,
         "analyst_verdict": body.analyst_verdict,
     })
 
-    # Return the updated alert
     updated = conn.execute(
         f"SELECT {ALERT_COLUMNS} FROM alerts WHERE id = %s", (alert_id,)
     ).fetchone()

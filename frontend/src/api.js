@@ -1,10 +1,3 @@
-/**
- * Thin API wrapper.
- * - All requests go to localhost:8000 (the FastAPI backend).
- * - JWT is read from localStorage and injected as Authorization header.
- * - 401 → clear token + redirect to /login.
- */
-
 const BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 function authHeaders() {
