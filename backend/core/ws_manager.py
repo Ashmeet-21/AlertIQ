@@ -42,5 +42,5 @@ class ConnectionManager:
             asyncio.run_coroutine_threadsafe(self.broadcast(data), self._loop)
 
 
-# Singleton — imported by routes_ws.py and routes_ingest.py
+# One shared instance, imported by the routes and main.py
 ws_manager = ConnectionManager()

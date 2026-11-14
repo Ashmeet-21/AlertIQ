@@ -7,28 +7,10 @@ class FilterResult:
     reason: str
 
 
-# Suppress group: checked first — matching alert is dropped, no further processing.
-SUPPRESS_RULES = [
-    {
-        "field": "event.type",
-        "values": ["heartbeat", "health_check", "ping", "keepalive", "noop"],
-        "reason": "routine noise event type",
-    },
-]
-
-# Escalate group: matching alert bypasses Claude and goes straight to analyst queue.
-ESCALATE_RULES = [
-    {
-        "field": "event.severity",
-        "values": ["CRITICAL"],
-        "reason": "explicit CRITICAL severity",
-    },
-    {
-        "field": "event.count",
-        "min": 50,
-        "reason": "very high attempt count (>=50)",
-    },
-]
+# Routine noise: dropped, no further processing
+NOISE_EVENT_TYPES = {"heartbeat", "health_check", "ping", "keepalive", "noop"}
+# At or above this attempt count the alert skips the AI and goes straight to an analyst
+ESCALATE_MIN_COUNT = 50
 
 
 def apply_prefilter(normalized: dict, throttled: bool = False) -> FilterResult:
@@ -36,23 +18,19 @@ def apply_prefilter(normalized: dict, throttled: bool = False) -> FilterResult:
         return FilterResult(action="suppress", reason="source IP throttled — alert storm detected")
 
     event_type = str(normalized.get("event.type", "")).lower()
-    for rule in SUPPRESS_RULES:
-        if rule["field"] == "event.type":
-            if event_type in [v.lower() for v in rule["values"]]:
-                return FilterResult(action="suppress", reason=rule["reason"])
+    if event_type in NOISE_EVENT_TYPES:
+        return FilterResult(action="suppress", reason="routine noise event type")
 
-    for rule in ESCALATE_RULES:
-        field_val = normalized.get(rule["field"])
-        if field_val is None:
-            continue
-        if "values" in rule:
-            if str(field_val).upper() in [v.upper() for v in rule["values"]]:
-                return FilterResult(action="escalate", reason=rule["reason"])
-        if "min" in rule:
-            try:
-                if int(field_val) >= rule["min"]:
-                    return FilterResult(action="escalate", reason=rule["reason"])
-            except (ValueError, TypeError):
-                pass
+    severity = normalized.get("event.severity")
+    if severity is not None and str(severity).upper() == "CRITICAL":
+        return FilterResult(action="escalate", reason="explicit CRITICAL severity")
+
+    count = normalized.get("event.count")
+    if count is not None:
+        try:
+            if int(count) >= ESCALATE_MIN_COUNT:
+                return FilterResult(action="escalate", reason="very high attempt count (>=50)")
+        except (ValueError, TypeError):
+            pass
 
     return FilterResult(action="triage", reason="passed pre-filter — queued for AI triage")
